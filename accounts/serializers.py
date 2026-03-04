@@ -1,7 +1,12 @@
 from rest_framework import serializers
 from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
-from .models import User, Follow, Video, BetMarker, InboxMessage, ShopItem
+from django.utils import timezone
+from .models import (
+    User, Follow, Video, BetMarker, BetMarkerOption,
+    BetEvent, BetEventOption, InboxMessage, ShopItem,
+    PlacedMarkerBet, PlacedEventBet, Notification,
+)
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -177,7 +182,7 @@ class VideoSerializer(serializers.ModelSerializer):
         fields = (
             'id', 'creator', 'creator_name', 'creator_avatar', 'title', 'description',
             'video_file', 'video_file_url', 'video_url', 'thumbnail', 'thumbnail_url', 'views', 'likes',
-            'comments', 'video_type', 'is_live', 'created_at', 'bet_markers'
+            'comments', 'video_type', 'is_live', 'created_at', 'bet_markers', 'bet_event'
         )
         read_only_fields = ('id', 'created_at', 'views', 'likes', 'comments')
     
@@ -201,23 +206,44 @@ class VideoSerializer(serializers.ModelSerializer):
         return None
     
     def get_bet_markers(self, obj):
-        # Only show bet markers if user is the owner
-        is_owner = self.context.get('is_owner', False)
-        if not is_owner:
-            return []
-        
+        # Show bet markers for all users (viewers place bets on them)
         markers = obj.bet_markers.all()
-        return [{
-            'id': str(m.id),
-            'timestamp': m.timestamp,
-            'question': m.question,
-            'options': [
-                {'id': 'option1', 'text': m.option1_text, 'odds': float(m.option1_odds)},
-                {'id': 'option2', 'text': m.option2_text, 'odds': float(m.option2_odds)}
-            ],
-            'total_pool': float(m.total_pool),
-            'participants': m.participants
-        } for m in markers]
+        result = []
+        for m in markers:
+            opts = list(m.options_list.order_by('order', 'id').values('id', 'text', 'odds'))
+            if not opts:
+                opts = [
+                    {'id': 'option1', 'text': m.option1_text or 'Yes', 'odds': float(m.option1_odds)},
+                    {'id': 'option2', 'text': m.option2_text or 'No', 'odds': float(m.option2_odds)}
+                ]
+            else:
+                opts = [{'id': str(o['id']), 'text': o['text'], 'odds': float(o['odds'])} for o in opts]
+            result.append({
+                'id': str(m.id),
+                'timestamp': m.timestamp,
+                'question': m.question,
+                'options': opts,
+                'total_pool': float(m.total_pool),
+                'participants': m.participants
+            })
+        return result
+
+    bet_event = serializers.SerializerMethodField()
+
+    def get_bet_event(self, obj):
+        """Active (open) live bet event for this video, if any"""
+        event = obj.bet_events.filter(status='open').order_by('-created_at').first()
+        if not event or (event.expires_at and event.expires_at <= timezone.now()):
+            return None
+        options = list(event.options_list.order_by('order', 'id').values('id', 'text', 'odds'))
+        return {
+            'id': str(event.id),
+            'question': event.question,
+            'options': [{'id': str(o['id']), 'text': o['text'], 'odds': float(o['odds'])} for o in options],
+            'totalPool': float(event.total_pool),
+            'participants': event.participants,
+            'expiresAt': int(event.expires_at.timestamp() * 1000) if event.expires_at else None,
+        }
 
 
 class InboxMessageSerializer(serializers.ModelSerializer):

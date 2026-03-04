@@ -5,7 +5,11 @@ from rest_framework.authtoken.models import Token
 from django.contrib.auth import logout
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample
 from drf_spectacular.types import OpenApiTypes
-from .models import User, Follow, Video, BetMarker, InboxMessage, ShopItem
+from .models import (
+    User, Follow, Video, BetMarker, BetMarkerOption,
+    BetEvent, BetEventOption, InboxMessage, ShopItem,
+    PlacedMarkerBet, PlacedEventBet, Notification,
+)
 from .serializers import (
     UserSerializer,
     UserProfileSerializer,
@@ -315,18 +319,328 @@ def upload_video(request):
         
         for marker_data in bet_markers_data:
             options = marker_data.get('options', [])
-            BetMarker.objects.create(
+            marker = BetMarker.objects.create(
                 video=video,
                 timestamp=float(marker_data.get('timestamp', 0)),
                 question=marker_data.get('question', ''),
-                option1_text=options[0].get('text', 'Yes') if len(options) > 0 else 'Yes',
-                option2_text=options[1].get('text', 'No') if len(options) > 1 else 'No',
+                option1_text=options[0].get('text', 'Yes') if len(options) > 0 else '',
+                option2_text=options[1].get('text', 'No') if len(options) > 1 else '',
                 option1_odds=float(options[0].get('odds', 2.0)) if len(options) > 0 else 2.0,
                 option2_odds=float(options[1].get('odds', 2.0)) if len(options) > 1 else 2.0,
             )
+            for i, opt in enumerate(options):
+                BetMarkerOption.objects.create(
+                    marker=marker,
+                    text=opt.get('text', 'Option'),
+                    odds=float(opt.get('odds', 2.0)),
+                    order=i,
+                )
         
         # Return created video with bet markers
         video_serializer = VideoSerializer(video, context={'request': request, 'is_owner': True})
         return Response(video_serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+# ---------- Betting ----------
+
+@extend_schema(
+    request=OpenApiTypes.OBJECT,
+    responses={200: OpenApiTypes.OBJECT},
+    description='Place a bet on a video bet marker',
+)
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def place_marker_bet(request):
+    """Place bet on a bet marker (timestamp-based)"""
+    marker_id = request.data.get('marker_id')
+    option_id = request.data.get('option_id')
+    amount = request.data.get('amount')
+    if not all([marker_id, option_id, amount]):
+        return Response(
+            {'error': 'marker_id, option_id and amount are required'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    try:
+        amount = float(amount)
+        if amount <= 0:
+            raise ValueError('Amount must be positive')
+    except (TypeError, ValueError):
+        return Response({'error': 'Invalid amount'}, status=status.HTTP_400_BAD_REQUEST)
+    user = request.user
+    if user.balance < amount:
+        return Response({'error': 'Insufficient balance'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        marker = BetMarker.objects.get(pk=marker_id)
+        option = BetMarkerOption.objects.get(pk=option_id, marker=marker)
+    except (BetMarker.DoesNotExist, BetMarkerOption.DoesNotExist):
+        return Response({'error': 'Marker or option not found'}, status=status.HTTP_404_NOT_FOUND)
+    bet = PlacedMarkerBet.objects.create(user=user, marker=marker, option=option, amount=amount)
+    user.balance -= amount
+    user.save(update_fields=['balance'])
+    marker.total_pool += amount
+    marker.participants += 1
+    marker.save(update_fields=['total_pool', 'participants'])
+    return Response({
+        'message': 'Bet placed',
+        'balance': float(user.balance),
+        'bet_id': bet.id,
+    }, status=status.HTTP_200_OK)
+
+
+@extend_schema(
+    request=OpenApiTypes.OBJECT,
+    responses={200: OpenApiTypes.OBJECT},
+    description='Place a bet on a live bet event',
+)
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def place_event_bet(request):
+    """Place bet on a live bet event"""
+    event_id = request.data.get('event_id')
+    option_id = request.data.get('option_id')
+    amount = request.data.get('amount')
+    if not all([event_id, option_id, amount]):
+        return Response(
+            {'error': 'event_id, option_id and amount are required'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    try:
+        amount = float(amount)
+        if amount <= 0:
+            raise ValueError('Amount must be positive')
+    except (TypeError, ValueError):
+        return Response({'error': 'Invalid amount'}, status=status.HTTP_400_BAD_REQUEST)
+    user = request.user
+    if user.balance < amount:
+        return Response({'error': 'Insufficient balance'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        event = BetEvent.objects.get(pk=event_id, status='open')
+        option = BetEventOption.objects.get(pk=option_id, event=event)
+    except (BetEvent.DoesNotExist, BetEventOption.DoesNotExist):
+        return Response({'error': 'Event or option not found or event is closed'}, status=status.HTTP_404_NOT_FOUND)
+    from django.utils import timezone
+    if event.expires_at and event.expires_at <= timezone.now():
+        return Response({'error': 'Betting has closed'}, status=status.HTTP_400_BAD_REQUEST)
+    bet = PlacedEventBet.objects.create(user=user, event=event, option=option, amount=amount)
+    user.balance -= amount
+    user.save(update_fields=['balance'])
+    event.total_pool += amount
+    event.participants += 1
+    event.save(update_fields=['total_pool', 'participants'])
+    return Response({
+        'message': 'Bet placed',
+        'balance': float(user.balance),
+        'bet_id': bet.id,
+    }, status=status.HTTP_200_OK)
+
+
+@extend_schema(
+    request=OpenApiTypes.OBJECT,
+    responses={200: OpenApiTypes.OBJECT},
+    description='Resolve a bet marker and pay out winners (creator only)',
+)
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def resolve_marker_bet(request):
+    """Resolve a marker: set winning option and pay out winners"""
+    marker_id = request.data.get('marker_id')
+    winning_option_id = request.data.get('winning_option_id')
+    if not marker_id or not winning_option_id:
+        return Response(
+            {'error': 'marker_id and winning_option_id are required'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    try:
+        marker = BetMarker.objects.get(pk=marker_id)
+    except BetMarker.DoesNotExist:
+        return Response({'error': 'Marker not found'}, status=status.HTTP_404_NOT_FOUND)
+    if marker.video.creator_id != request.user.id:
+        return Response({'error': 'Only the video creator can resolve'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        winning_option = BetMarkerOption.objects.get(pk=winning_option_id, marker=marker)
+    except BetMarkerOption.DoesNotExist:
+        return Response({'error': 'Winning option not found'}, status=status.HTTP_404_NOT_FOUND)
+    for bet in PlacedMarkerBet.objects.filter(marker=marker, resolved=False):
+        bet.resolved = True
+        if bet.option_id == int(winning_option_id):
+            payout = float(bet.amount * bet.option.odds)
+            bet.payout = payout
+            bet.user.balance += payout
+            bet.user.save(update_fields=['balance'])
+            Notification.objects.create(
+                user=bet.user,
+                notif_type='bet_win',
+                message=f'You won ${payout:.2f} on "{marker.question}"',
+                link=f'/watch/{marker.video_id}',
+            )
+        else:
+            Notification.objects.create(
+                user=bet.user,
+                notif_type='bet_loss',
+                message=f'You lost ${bet.amount} on "{marker.question}"',
+                link=f'/watch/{marker.video_id}',
+            )
+        bet.save()
+    return Response({'message': 'Marker resolved'}, status=status.HTTP_200_OK)
+
+
+@extend_schema(
+    request=OpenApiTypes.OBJECT,
+    responses={200: OpenApiTypes.OBJECT},
+    description='Resolve a live bet event and pay out winners (creator only)',
+)
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def resolve_event_bet(request):
+    """Resolve a live bet event"""
+    event_id = request.data.get('event_id')
+    winning_option_id = request.data.get('winning_option_id')
+    if not event_id or not winning_option_id:
+        return Response(
+            {'error': 'event_id and winning_option_id are required'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    try:
+        event = BetEvent.objects.get(pk=event_id)
+    except BetEvent.DoesNotExist:
+        return Response({'error': 'Event not found'}, status=status.HTTP_404_NOT_FOUND)
+    if event.creator_id != request.user.id:
+        return Response({'error': 'Only the event creator can resolve'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        winning_option = BetEventOption.objects.get(pk=winning_option_id, event=event)
+    except BetEventOption.DoesNotExist:
+        return Response({'error': 'Winning option not found'}, status=status.HTTP_404_NOT_FOUND)
+    event.status = 'resolved'
+    event.winning_option = winning_option
+    event.save(update_fields=['status', 'winning_option'])
+    for bet in PlacedEventBet.objects.filter(event=event, resolved=False):
+        bet.resolved = True
+        if bet.option_id == int(winning_option_id):
+            payout = float(bet.amount * bet.option.odds)
+            bet.payout = payout
+            bet.user.balance += payout
+            bet.user.save(update_fields=['balance'])
+            Notification.objects.create(
+                user=bet.user,
+                notif_type='bet_win',
+                message=f'You won ${payout:.2f} on "{event.question}"',
+                link=event.video_id and f'/watch/{event.video_id}' or '',
+            )
+        else:
+            Notification.objects.create(
+                user=bet.user,
+                notif_type='bet_loss',
+                message=f'You lost ${bet.amount} on "{event.question}"',
+                link=event.video_id and f'/watch/{event.video_id}' or '',
+            )
+        bet.save()
+    return Response({'message': 'Event resolved'}, status=status.HTTP_200_OK)
+
+
+@extend_schema(
+    request=OpenApiTypes.OBJECT,
+    responses={201: OpenApiTypes.OBJECT},
+    description='Create a live bet event (e.g. during stream)',
+)
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def create_bet_event(request):
+    """Create a live bet event (for live stream or video)"""
+    from django.utils import timezone
+    from datetime import timedelta
+    video_id = request.data.get('video_id')
+    question = request.data.get('question')
+    options = request.data.get('options')  # [{"text": "...", "odds": 1.5}, ...]
+    duration_seconds = request.data.get('duration_seconds', 60)
+    if not question or not options or len(options) < 2:
+        return Response(
+            {'error': 'question and at least 2 options are required'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    video = None
+    if video_id:
+        try:
+            video = Video.objects.get(pk=video_id)
+            if video.creator_id != request.user.id:
+                return Response({'error': 'Not your video'}, status=status.HTTP_403_FORBIDDEN)
+        except Video.DoesNotExist:
+            return Response({'error': 'Video not found'}, status=status.HTTP_404_NOT_FOUND)
+    expires_at = timezone.now() + timedelta(seconds=int(duration_seconds))
+    event = BetEvent.objects.create(
+        video=video,
+        creator=request.user,
+        question=question,
+        expires_at=expires_at,
+        status='open',
+    )
+    for i, opt in enumerate(options):
+        BetEventOption.objects.create(
+            event=event,
+            text=opt.get('text', 'Option'),
+            odds=float(opt.get('odds', 2.0)),
+            order=i,
+        )
+    options_out = list(event.options_list.order_by('order', 'id').values('id', 'text', 'odds'))
+    return Response({
+        'id': event.id,
+        'question': event.question,
+        'options': [{'id': o['id'], 'text': o['text'], 'odds': float(o['odds'])} for o in options_out],
+        'expires_at': event.expires_at.isoformat(),
+        'expiresAt': int(event.expires_at.timestamp() * 1000),
+    }, status=status.HTTP_201_CREATED)
+
+
+# ---------- Notifications ----------
+
+@extend_schema(
+    responses={200: OpenApiTypes.OBJECT},
+    description='List notifications for current user',
+)
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def list_notifications(request):
+    """List user notifications"""
+    notifications = Notification.objects.filter(user=request.user).order_by('-created_at')[:50]
+    data = [{
+        'id': n.id,
+        'message': n.message,
+        'type': n.notif_type,
+        'timestamp': int(n.created_at.timestamp() * 1000),
+        'is_read': n.is_read,
+        'link': n.link or '',
+    } for n in notifications]
+    return Response(data, status=status.HTTP_200_OK)
+
+
+@extend_schema(
+    responses={200: OpenApiTypes.OBJECT},
+    description='Mark a notification as read',
+)
+@api_view(['PATCH', 'POST'])
+@permission_classes([permissions.IsAuthenticated])
+def mark_notification_read(request, notification_id):
+    """Mark notification as read"""
+    try:
+        n = Notification.objects.get(pk=notification_id, user=request.user)
+        n.is_read = True
+        n.save(update_fields=['is_read'])
+        return Response({'message': 'Marked as read'}, status=status.HTTP_200_OK)
+    except Notification.DoesNotExist:
+        return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+
+
+# ---------- Feed ----------
+
+@extend_schema(
+    responses={200: VideoSerializer(many=True)},
+    description='Get feed videos (home/feed). Returns most recent videos.',
+)
+@api_view(['GET'])
+@permission_classes([permissions.AllowAny])
+def feed_videos(request):
+    """List videos for feed (most recent first)"""
+    videos = Video.objects.all().order_by('-created_at')[:100]
+    serializer = VideoSerializer(videos, many=True, context={'request': request, 'is_owner': False})
+    return Response(serializer.data, status=status.HTTP_200_OK)
 

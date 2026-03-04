@@ -101,8 +101,8 @@ class BetMarker(models.Model):
     video = models.ForeignKey(Video, related_name='bet_markers', on_delete=models.CASCADE)
     timestamp = models.FloatField(help_text="Timestamp in seconds")
     question = models.CharField(max_length=255)
-    option1_text = models.CharField(max_length=100)
-    option2_text = models.CharField(max_length=100)
+    option1_text = models.CharField(max_length=100, blank=True)
+    option2_text = models.CharField(max_length=100, blank=True)
     option1_odds = models.DecimalField(max_digits=5, decimal_places=2, default=2.0)
     option2_odds = models.DecimalField(max_digits=5, decimal_places=2, default=2.0)
     total_pool = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
@@ -115,6 +115,118 @@ class BetMarker(models.Model):
     
     def __str__(self):
         return f'{self.video.title} - {self.timestamp}s'
+
+
+class BetMarkerOption(models.Model):
+    """Single option for a bet marker (supports N options per marker)"""
+    marker = models.ForeignKey(BetMarker, related_name='options_list', on_delete=models.CASCADE)
+    text = models.CharField(max_length=255)
+    odds = models.DecimalField(max_digits=5, decimal_places=2, default=2.0)
+    order = models.PositiveSmallIntegerField(default=0)
+    
+    class Meta:
+        db_table = 'bet_marker_options'
+        ordering = ['order', 'id']
+    
+    def __str__(self):
+        return f'{self.marker_id}: {self.text}'
+
+
+class BetEvent(models.Model):
+    """Live betting event (e.g. on a stream or video)"""
+    video = models.ForeignKey(Video, related_name='bet_events', on_delete=models.CASCADE, null=True, blank=True)
+    creator = models.ForeignKey(User, related_name='created_bet_events', on_delete=models.CASCADE)
+    question = models.CharField(max_length=255)
+    expires_at = models.DateTimeField()
+    total_pool = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+    participants = models.IntegerField(default=0)
+    status = models.CharField(
+        max_length=20,
+        choices=[('open', 'Open'), ('resolved', 'Resolved'), ('cancelled', 'Cancelled')],
+        default='open'
+    )
+    winning_option = models.ForeignKey(
+        'BetEventOption', related_name='won_events', on_delete=models.SET_NULL, null=True, blank=True
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        db_table = 'bet_events'
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return self.question
+
+
+class BetEventOption(models.Model):
+    """Option for a live bet event"""
+    event = models.ForeignKey(BetEvent, related_name='options_list', on_delete=models.CASCADE)
+    text = models.CharField(max_length=255)
+    odds = models.DecimalField(max_digits=5, decimal_places=2, default=2.0)
+    order = models.PositiveSmallIntegerField(default=0)
+    
+    class Meta:
+        db_table = 'bet_event_options'
+        ordering = ['order', 'id']
+    
+    def __str__(self):
+        return f'{self.event_id}: {self.text}'
+
+
+class PlacedMarkerBet(models.Model):
+    """User's bet on a video bet marker"""
+    user = models.ForeignKey(User, related_name='marker_bets', on_delete=models.CASCADE)
+    marker = models.ForeignKey(BetMarker, related_name='placed_bets', on_delete=models.CASCADE)
+    option = models.ForeignKey(BetMarkerOption, related_name='bets', on_delete=models.CASCADE)
+    amount = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0.01)])
+    payout = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    resolved = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        db_table = 'placed_marker_bets'
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f'{self.user.username} ${self.amount} on {self.option.text}'
+
+
+class PlacedEventBet(models.Model):
+    """User's bet on a live bet event"""
+    user = models.ForeignKey(User, related_name='event_bets', on_delete=models.CASCADE)
+    event = models.ForeignKey(BetEvent, related_name='placed_bets', on_delete=models.CASCADE)
+    option = models.ForeignKey(BetEventOption, related_name='bets', on_delete=models.CASCADE)
+    amount = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0.01)])
+    payout = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    resolved = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        db_table = 'placed_event_bets'
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f'{self.user.username} ${self.amount} on {self.option.text}'
+
+
+class Notification(models.Model):
+    """User notifications (bet_win, bet_loss, new_video, etc.)"""
+    user = models.ForeignKey(User, related_name='notifications', on_delete=models.CASCADE)
+    notif_type = models.CharField(
+        max_length=20,
+        choices=[('bet_win', 'Bet Win'), ('bet_loss', 'Bet Loss'), ('new_video', 'New Video'), ('other', 'Other')]
+    )
+    message = models.TextField()
+    link = models.CharField(max_length=500, blank=True)
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        db_table = 'notifications'
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f'{self.user.username}: {self.notif_type}'
 
 
 class InboxMessage(models.Model):
