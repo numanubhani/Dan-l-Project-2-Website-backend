@@ -43,8 +43,9 @@ In the **Web** tab → your web app → **Environment variables**, add:
 | `SECRET_KEY`      | (generate a new one, see below)                                               |
 | `DEBUG`           | `False`                                                                       |
 | `ALLOWED_HOSTS`   | `muhammadnumansubhan1.pythonanywhere.com` (already default in settings)      |
-| `STATIC_ROOT`     | `/home/muhammadnumansubhan1/yourproject/static/` (replace **yourproject** with your actual project directory name) |
-| `CORS_EXTRA_ORIGINS` | Your frontend URL(s), comma-separated (optional)                            |
+| `STATIC_ROOT`     | `/home/muhammadnumansubhan1/yourproject/static/` (replace **yourproject** with your project directory) |
+| `MEDIA_ROOT`      | `/home/muhammadnumansubhan1/yourproject/media/` (optional; defaults to project `media/` if unset)      |
+| `CORS_EXTRA_ORIGINS` | Your frontend URL(s), comma-separated (optional)                                                      |
 
 Generate a secret key locally:
 
