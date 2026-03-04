@@ -5,6 +5,14 @@ Django settings for vpulse_backend project.
 from pathlib import Path
 import os
 
+# Optional: use python-decouple for env vars (production / PythonAnywhere)
+def _get_env(key, default=None, cast=None):
+    try:
+        from decouple import config
+        return config(key, default=default, cast=cast)
+    except Exception:
+        return default
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -18,12 +26,14 @@ ADMIN_INDEX_TITLE = "Welcome to VPulse Admin Panel"
 # See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-vpulse-dev-key-change-in-production-2024'
+SECRET_KEY = _get_env('SECRET_KEY', 'django-insecure-vpulse-dev-key-change-in-production-2024')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = _get_env('DEBUG', True, lambda v: str(v).lower() in ('1', 'true', 'yes'))
 
-ALLOWED_HOSTS = ['*']
+# Comma-separated in production, e.g. yourusername.pythonanywhere.com
+_ALLOWED = _get_env('ALLOWED_HOSTS', '')
+ALLOWED_HOSTS = [h.strip() for h in _ALLOWED.split(',') if h.strip()] or ['*']
 
 
 # Application definition
@@ -164,8 +174,12 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:5173",
     "http://127.0.0.1:3000",
 ]
+# Add production frontend URL(s) via env, e.g. CORS_EXTRA_ORIGINS=https://yoursite.com,https://www.yoursite.com
+_extra_origins = _get_env('CORS_EXTRA_ORIGINS', '')
+if _extra_origins:
+    CORS_ALLOWED_ORIGINS.extend(origin.strip() for origin in _extra_origins.split(',') if origin.strip())
 
 CORS_ALLOW_CREDENTIALS = True
 
-CORS_ALLOW_ALL_ORIGINS = DEBUG  # Allow all origins in development
+CORS_ALLOW_ALL_ORIGINS = DEBUG  # Allow all origins in development only
 

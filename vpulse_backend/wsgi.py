@@ -8,10 +8,15 @@ https://docs.djangoproject.com/en/5.0/howto/deployment/wsgi/
 """
 
 import os
+import sys
 
-from django.core.wsgi import get_wsgi_application
+# Add project root to path (required for PythonAnywhere and similar hosts)
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'vpulse_backend.settings')
 
+from django.core.wsgi import get_wsgi_application
 application = get_wsgi_application()
 
