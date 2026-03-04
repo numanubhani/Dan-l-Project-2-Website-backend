@@ -1,17 +1,24 @@
 """
 Django settings for vpulse_backend project.
+
+Works for both LOCAL and PYTHONANYWHERE:
+- Local: run as-is (no env vars). Uses 127.0.0.1, localhost, DEBUG=True, SQLite, local static/media.
+- PythonAnywhere: set env vars in Web → your app → Environment variables (see DEPLOY_PYTHONANYWHERE.md).
 """
 
 from pathlib import Path
 import os
 
-# Optional: use python-decouple for env vars (production / PythonAnywhere)
 def _get_env(key, default=None, cast=None):
+    """Read from environment; use python-decouple if available (e.g. .env or PA env vars)."""
     try:
         from decouple import config
         return config(key, default=default, cast=cast)
     except Exception:
-        return default
+        val = os.environ.get(key, default)
+        if cast and val is not None:
+            return cast(val) if callable(cast) else val
+        return val
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -22,18 +29,14 @@ ADMIN_SITE_TITLE = "VPulse Administration"
 ADMIN_INDEX_TITLE = "Welcome to VPulse Admin Panel"
 
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
-
-# SECURITY WARNING: keep the secret key used in production secret!
+# ---------- Local vs PythonAnywhere (same settings file) ----------
+# SECURITY: override SECRET_KEY and set DEBUG=False on PythonAnywhere.
 SECRET_KEY = _get_env('SECRET_KEY', 'django-insecure-vpulse-dev-key-change-in-production-2024')
-
-# SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = _get_env('DEBUG', True, lambda v: str(v).lower() in ('1', 'true', 'yes'))
 
-# PythonAnywhere: use your domain. Comma-separated for multiple.
+# Hosts: always allow local; add production host(s) from env (e.g. yourname.pythonanywhere.com).
 _ALLOWED = _get_env('ALLOWED_HOSTS', 'muhammadnumansubhan1.pythonanywhere.com')
-ALLOWED_HOSTS = [h.strip() for h in _ALLOWED.split(',') if h.strip()] or ['muhammadnumansubhan1.pythonanywhere.com']
+ALLOWED_HOSTS = ['127.0.0.1', 'localhost'] + [h.strip() for h in _ALLOWED.split(',') if h.strip()]
 
 
 # Application definition
@@ -126,16 +129,12 @@ USE_I18N = True
 USE_TZ = True
 
 
-# Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/5.0/howto/static-files/
-# On PythonAnywhere: set STATIC_ROOT in env to /home/muhammadnumansubhan1/yourproject/static/
-# (replace yourproject with your actual project directory name)
-
+# Static and media files (local: project dirs; PythonAnywhere: set STATIC_ROOT/MEDIA_ROOT in env)
 STATIC_URL = '/static/'
 STATIC_ROOT = _get_env('STATIC_ROOT', str(BASE_DIR / 'staticfiles'))
 
 MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+MEDIA_ROOT = Path(_get_env('MEDIA_ROOT', str(BASE_DIR / 'media')))
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field
