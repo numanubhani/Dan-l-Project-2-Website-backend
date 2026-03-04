@@ -79,29 +79,32 @@ python manage.py create_default_admin
 
 In the **Web** tab:
 
-1. **Source code**: set to your project root (the directory that contains `manage.py`).
+1. **Source code**: set to your project root (the directory that contains `manage.py` and the `vpulse_backend` folder).
 2. **Working directory**: set to the same project root.
-3. **Virtualenv**: set to the path of your venv, e.g. `/home/yourusername/your-repo/venv`.
-4. **WSGI configuration file**: click the link to edit the WSGI file (e.g. `/var/www/yourusername_pythonanywhere_com_wsgi.py`).
+3. **Virtualenv**: set to the path of your venv, e.g. `/home/muhammadnumansubhan1/your-repo/venv`.
+4. **WSGI configuration file**: click the link to edit the WSGI file (e.g. `/var/www/muhammadnumansubhan1_pythonanywhere_com_wsgi.py`).
 
-Replace the contents of that WSGI file with (adjust paths and project name if needed):
+**Important:** Django must use **`vpulse_backend.settings`** (not `vpulse.settings`). The URLconf is `vpulse_backend.urls`, which defines `/api/docs/`, `/admin/`, etc. If you use the wrong project name, you will get 404 on `/api/docs`.
+
+Replace the contents of that WSGI file with:
 
 ```python
 import sys
 import os
 
-# Project root (directory containing manage.py)
-path = '/home/yourusername/your-repo'  # <-- CHANGE THIS
+# Project root: the directory that contains manage.py and the vpulse_backend package
+path = '/home/muhammadnumansubhan1/your-repo'  # <-- Replace your-repo with your actual project folder name
 if path not in sys.path:
     sys.path.insert(0, path)
 
+# Must be vpulse_backend.settings (this loads vpulse_backend.urls with api/docs, api/, admin/)
 os.environ['DJANGO_SETTINGS_MODULE'] = 'vpulse_backend.settings'
 
 from django.core.wsgi import get_wsgi_application
 application = get_wsgi_application()
 ```
 
-Replace `yourusername` and `your-repo` with your actual PythonAnywhere username and project directory name.
+Replace `your-repo` with your actual project directory name (e.g. `Dan-l-Project-2-Website-backend` or whatever folder contains `manage.py` and `vpulse_backend/`).
 
 ## 7. Static and media files (Web tab)
 
@@ -125,6 +128,7 @@ Click **Reload** for your web app. The API should be available at:
 
 ## Troubleshooting
 
+- **404 on `/api/docs`** – The error says "Using the URLconf defined in **vpulse.urls**" and only lists `admin/`. That means Django is loading the wrong project. In your WSGI file, set `os.environ['DJANGO_SETTINGS_MODULE'] = 'vpulse_backend.settings'` (not `vpulse.settings`), and set `path` to the directory that contains the **vpulse_backend** folder and **manage.py**. Reload the web app.
 - **500 error**: Check **Web** tab → **Error log** and **Server log**.
 - **Static files 404**: Confirm `collectstatic` was run and the static URL/directory mappings match your paths.
 - **Import errors**: Ensure the path in the WSGI file is the project root (where `manage.py` and `vpulse_backend` live) and that the virtualenv is set correctly.
