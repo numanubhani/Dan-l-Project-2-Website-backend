@@ -31,9 +31,9 @@ SECRET_KEY = _get_env('SECRET_KEY', 'django-insecure-vpulse-dev-key-change-in-pr
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = _get_env('DEBUG', True, lambda v: str(v).lower() in ('1', 'true', 'yes'))
 
-# Comma-separated in production, e.g. yourusername.pythonanywhere.com
-_ALLOWED = _get_env('ALLOWED_HOSTS', '')
-ALLOWED_HOSTS = [h.strip() for h in _ALLOWED.split(',') if h.strip()] or ['*']
+# PythonAnywhere: use your domain. Comma-separated for multiple.
+_ALLOWED = _get_env('ALLOWED_HOSTS', 'muhammadnumansubhan1.pythonanywhere.com')
+ALLOWED_HOSTS = [h.strip() for h in _ALLOWED.split(',') if h.strip()] or ['muhammadnumansubhan1.pythonanywhere.com']
 
 
 # Application definition
@@ -128,9 +128,11 @@ USE_TZ = True
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.0/howto/static-files/
+# On PythonAnywhere: set STATIC_ROOT in env to /home/muhammadnumansubhan1/yourproject/static/
+# (replace yourproject with your actual project directory name)
 
-STATIC_URL = 'static/'
-STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATIC_URL = '/static/'
+STATIC_ROOT = _get_env('STATIC_ROOT', str(BASE_DIR / 'staticfiles'))
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'

@@ -38,12 +38,13 @@ pip install -r requirements.txt
 
 In the **Web** tab → your web app → **Environment variables**, add:
 
-| Variable          | Example value                                      |
-|-------------------|----------------------------------------------------|
-| `SECRET_KEY`      | (generate a new one, see below)                    |
-| `DEBUG`           | `False`                                            |
-| `ALLOWED_HOSTS`   | `yourusername.pythonanywhere.com`                  |
-| `CORS_EXTRA_ORIGINS` | Your frontend URL(s), comma-separated (optional) |
+| Variable          | Example value                                                                 |
+|-------------------|-------------------------------------------------------------------------------|
+| `SECRET_KEY`      | (generate a new one, see below)                                               |
+| `DEBUG`           | `False`                                                                       |
+| `ALLOWED_HOSTS`   | `muhammadnumansubhan1.pythonanywhere.com` (already default in settings)      |
+| `STATIC_ROOT`     | `/home/muhammadnumansubhan1/yourproject/static/` (replace **yourproject** with your actual project directory name) |
+| `CORS_EXTRA_ORIGINS` | Your frontend URL(s), comma-separated (optional)                            |
 
 Generate a secret key locally:
 
@@ -51,16 +52,25 @@ Generate a secret key locally:
 python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
 ```
 
-## 5. Database and static files
+## 5. Database and collectstatic
 
-In the **Bash** console (with venv activated):
+In the **Bash** console (with venv activated), from your project root:
 
 ```bash
 python manage.py migrate
+python manage.py collectstatic
+```
+
+This gathers all static files into the directory set by `STATIC_ROOT` (e.g. `/home/muhammadnumansubhan1/yourproject/static/` if you set that in env). Use `--noinput` to skip prompts:
+
+```bash
 python manage.py collectstatic --noinput
-# Optional: create superuser for admin
+```
+
+Optional:
+
+```bash
 python manage.py createsuperuser
-# Optional: create default admin (if you use that command)
 python manage.py create_default_admin
 ```
 
@@ -94,14 +104,15 @@ Replace `yourusername` and `your-repo` with your actual PythonAnywhere username 
 
 ## 7. Static and media files (Web tab)
 
-In the **Web** tab, under **Static files**:
+In the **Web** tab, under **Static files**, add mappings that match `STATIC_ROOT` and `MEDIA_ROOT`:
 
 - **URL**: `/static/`  
-  **Directory**: `/home/yourusername/your-repo/staticfiles`
+  **Directory**: `/home/muhammadnumansubhan1/yourproject/static/`  
+  (same path as `STATIC_ROOT`; replace **yourproject** with your actual project directory)
 - **URL**: `/media/`  
-  **Directory**: `/home/yourusername/your-repo/media`
+  **Directory**: `/home/muhammadnumansubhan1/yourproject/media`
 
-Use your real path if different.
+Then click **Reload** so static files are served correctly.
 
 ## 8. Reload the app
 
