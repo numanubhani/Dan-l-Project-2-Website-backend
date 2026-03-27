@@ -29,14 +29,28 @@ ADMIN_SITE_TITLE = "VPulse Administration"
 ADMIN_INDEX_TITLE = "Welcome to VPulse Admin Panel"
 
 
+# ---------- PythonAnywhere deployment (edit these for your account) ----------
+PYTHONANYWHERE_USER = 'muhammadnumansubhan1'
+# Project folder on PythonAnywhere (the directory that contains manage.py and vpulse_backend)
+PYTHONANYWHERE_PROJECT_DIR = f'/home/{PYTHONANYWHERE_USER}/Dan-l-Project-2-Website-backend'
+PYTHONANYWHERE_DOMAIN = f'{PYTHONANYWHERE_USER}.pythonanywhere.com'
+
+
 # ---------- Local vs PythonAnywhere (same settings file) ----------
 # SECURITY: override SECRET_KEY and set DEBUG=False on PythonAnywhere.
 SECRET_KEY = _get_env('SECRET_KEY', 'django-insecure-vpulse-dev-key-change-in-production-2024')
 DEBUG = _get_env('DEBUG', True, lambda v: str(v).lower() in ('1', 'true', 'yes'))
 
-# Hosts: always allow local; add production host(s) from env (e.g. yourname.pythonanywhere.com).
-_ALLOWED = _get_env('ALLOWED_HOSTS', 'muhammadnumansubhan1.pythonanywhere.com')
+# Hosts: local + PythonAnywhere domain from above; extra hosts from env (comma-separated).
+_ALLOWED = _get_env('ALLOWED_HOSTS', PYTHONANYWHERE_DOMAIN)
 ALLOWED_HOSTS = ['127.0.0.1', 'localhost'] + [h.strip() for h in _ALLOWED.split(',') if h.strip()]
+
+# CSRF trusted origins (PythonAnywhere + local)
+CSRF_TRUSTED_ORIGINS = [
+    f'https://{PYTHONANYWHERE_DOMAIN}',
+    'http://127.0.0.1:8000',
+    'http://localhost:8000',
+]
 
 
 # Application definition
@@ -129,12 +143,16 @@ USE_I18N = True
 USE_TZ = True
 
 
-# Static and media files (local: project dirs; PythonAnywhere: set STATIC_ROOT/MEDIA_ROOT in env)
+# Static and media files (local: under BASE_DIR; PythonAnywhere: under PYTHONANYWHERE_PROJECT_DIR)
 STATIC_URL = '/static/'
 STATIC_ROOT = _get_env('STATIC_ROOT', str(BASE_DIR / 'staticfiles'))
+if str(BASE_DIR).startswith('/home/') and STATIC_ROOT == str(BASE_DIR / 'staticfiles'):
+    STATIC_ROOT = os.path.join(PYTHONANYWHERE_PROJECT_DIR, 'static')
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = Path(_get_env('MEDIA_ROOT', str(BASE_DIR / 'media')))
+if str(BASE_DIR).startswith('/home/') and str(MEDIA_ROOT) == str(BASE_DIR / 'media'):
+    MEDIA_ROOT = Path(os.path.join(PYTHONANYWHERE_PROJECT_DIR, 'media'))
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field

@@ -2,27 +2,41 @@
 
 Follow these steps to deploy this Django backend on [PythonAnywhere](https://www.pythonanywhere.com/).
 
+---
+
+## ⚠️ You must run the correct project (vpulse_backend)
+
+The Web app must use **this** project (the one with `vpulse_backend/` and `accounts/`), not a different folder named only `vpulse` with a basic Django site.
+
+- **Wrong:** Code path `/home/.../vpulse` and settings `vpulse.settings` → gives "no such table: auth_user", 404 on `/api/docs`, only `admin/` in URLs.
+- **Right:** Code path = the folder that contains **`manage.py`**, **`vpulse_backend/`**, and **`accounts/`**. In the WSGI file use **`vpulse_backend.settings`** and set **`path`** to that folder.
+
+If you see **"Using settings module vpulse.settings"** or **"no such table: auth_user"**, the Web app is still pointing at the wrong project. Fix the **Code** path and **WSGI** file as in sections 2 and 6 below, then **Reload**.
+
+---
+
 ## 1. Create account and get a project path
 
 - Sign up at https://www.pythonanywhere.com/ (free tier is fine).
 - Note your **username**; your app URL will be `https://<username>.pythonanywhere.com`.
 
-## 2. Upload the project
+## 2. Upload the project (this repo, not a plain "vpulse" project)
 
 In a **Bash** console on PythonAnywhere:
 
 ```bash
 cd ~
-# Clone your repo (replace with your actual repo URL)
-git clone https://github.com/yourusername/your-repo.git
-cd your-repo
-# If the Django project is in a subfolder (e.g. backend), cd into it
+# Clone THIS backend repo (the one with vpulse_backend and accounts)
+git clone https://github.com/yourusername/Dan-l-Project-2-Website-backend.git
+cd Dan-l-Project-2-Website-backend
+# If the Django app is in a subfolder (e.g. backend), cd into it so you see manage.py and vpulse_backend/
 # cd backend
+ls -la   # you must see: manage.py  vpulse_backend/  accounts/  requirements.txt
 ```
 
 Or upload the project via **Files** tab (zip and upload, then unzip).
 
-Make sure the folder that contains `manage.py` and `vpulse_backend/` is your project root.
+**Project root** = the directory that contains **`manage.py`**, **`vpulse_backend/`**, and **`accounts/`**. The Web app **Code** path and the WSGI **path** must both point to this directory.
 
 ## 3. Create virtualenv and install dependencies
 
@@ -34,18 +48,22 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## 4. Environment variables
+## 4. PythonAnywhere config (in settings.py) and environment variables
 
-In the **Web** tab → your web app → **Environment variables**, add:
+**In `vpulse_backend/settings.py`** the PythonAnywhere section defines (edit if your path or username differ):
 
-| Variable          | Example value                                                                 |
-|-------------------|-------------------------------------------------------------------------------|
-| `SECRET_KEY`      | (generate a new one, see below)                                               |
-| `DEBUG`           | `False`                                                                       |
-| `ALLOWED_HOSTS`   | `muhammadnumansubhan1.pythonanywhere.com` (already default in settings)      |
-| `STATIC_ROOT`     | `/home/muhammadnumansubhan1/yourproject/static/` (replace **yourproject** with your project directory) |
-| `MEDIA_ROOT`      | `/home/muhammadnumansubhan1/yourproject/media/` (optional; defaults to project `media/` if unset)      |
-| `CORS_EXTRA_ORIGINS` | Your frontend URL(s), comma-separated (optional)                                                      |
+- `PYTHONANYWHERE_USER` – your PythonAnywhere username
+- `PYTHONANYWHERE_PROJECT_DIR` – path to the project folder on the server (must match where you clone the repo)
+- `PYTHONANYWHERE_DOMAIN` – used for `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS`
+- Static/media roots on PythonAnywhere are derived from `PYTHONANYWHERE_PROJECT_DIR` when running under `/home/`
+
+**In the Web tab → Environment variables**, set only:
+
+| Variable          | Example value                                    |
+|-------------------|--------------------------------------------------|
+| `SECRET_KEY`      | (generate a new one, see below)                  |
+| `DEBUG`           | `False`                                          |
+| `CORS_EXTRA_ORIGINS` | Your frontend URL(s), comma-separated (optional) |
 
 Generate a secret key locally:
 
@@ -104,17 +122,18 @@ from django.core.wsgi import get_wsgi_application
 application = get_wsgi_application()
 ```
 
-Replace `your-repo` with your actual project directory name (e.g. `Dan-l-Project-2-Website-backend` or whatever folder contains `manage.py` and `vpulse_backend/`).
+Use your **actual** project directory. For example if you cloned into `Dan-l-Project-2-Website-backend` and the folder that contains `manage.py` is that one, then:
+`path = '/home/muhammadnumansubhan1/Dan-l-Project-2-Website-backend'`
+If your backend is inside a `backend` subfolder: `path = '/home/muhammadnumansubhan1/YourRepoName/backend'`.
 
 ## 7. Static and media files (Web tab)
 
-In the **Web** tab, under **Static files**, add mappings that match `STATIC_ROOT` and `MEDIA_ROOT`:
+In the **Web** tab, under **Static files**, add mappings. Paths are set in `settings.py` (`PYTHONANYWHERE_PROJECT_DIR`):
 
 - **URL**: `/static/`  
-  **Directory**: `/home/muhammadnumansubhan1/yourproject/static/`  
-  (same path as `STATIC_ROOT`; replace **yourproject** with your actual project directory)
+  **Directory**: `{PYTHONANYWHERE_PROJECT_DIR}/static` (e.g. `/home/muhammadnumansubhan1/Dan-l-Project-2-Website-backend/static`)
 - **URL**: `/media/`  
-  **Directory**: `/home/muhammadnumansubhan1/yourproject/media`
+  **Directory**: `{PYTHONANYWHERE_PROJECT_DIR}/media`
 
 Then click **Reload** so static files are served correctly.
 
@@ -128,7 +147,8 @@ Click **Reload** for your web app. The API should be available at:
 
 ## Troubleshooting
 
-- **404 on `/api/docs`** – The error says "Using the URLconf defined in **vpulse.urls**" and only lists `admin/`. That means Django is loading the wrong project. In your WSGI file, set `os.environ['DJANGO_SETTINGS_MODULE'] = 'vpulse_backend.settings'` (not `vpulse.settings`), and set `path` to the directory that contains the **vpulse_backend** folder and **manage.py**. Reload the web app.
+- **"no such table: auth_user"** or **"Using settings module vpulse.settings"** – The app is running a different project (plain `vpulse`), not this backend. This backend uses `accounts.User` (table `accounts_user`), not `auth.User`. Do this: (1) In **Web** → **Code**, set the path to the folder that contains **manage.py**, **vpulse_backend/**, and **accounts/** (e.g. `Dan-l-Project-2-Website-backend` or `.../backend`). (2) In the **WSGI file**, set `path = '/home/muhammadnumansubhan1/YourActualProjectFolder'` and `os.environ['DJANGO_SETTINGS_MODULE'] = 'vpulse_backend.settings'`. (3) Reload. Then in a Bash console **in that project directory** run `python manage.py migrate` (and create a superuser if needed).
+- **404 on `/api/docs`** – Same cause: wrong project (vpulse.urls instead of vpulse_backend.urls). Fix the Code path and WSGI as above; use `vpulse_backend.settings`.
 - **500 error**: Check **Web** tab → **Error log** and **Server log**.
-- **Static files 404**: Confirm `collectstatic` was run and the static URL/directory mappings match your paths.
+- **Static files 404**: Confirm `collectstatic` was run in the correct project and the static URL/directory mappings match your paths.
 - **Import errors**: Ensure the path in the WSGI file is the project root (where `manage.py` and `vpulse_backend` live) and that the virtualenv is set correctly.
