@@ -202,25 +202,35 @@ def toggle_follow(request, user_id):
 
 @extend_schema(
     responses={200: VideoSerializer},
-    description='Get a single video by ID',
-    summary='Get Video'
+    description='Get a single video by ID, or delete it (DELETE: owner only)',
+    summary='Get or delete video',
 )
-@api_view(['GET'])
+@api_view(['GET', 'DELETE'])
 @permission_classes([permissions.AllowAny])
 def get_video(request, video_id):
-    """Get a single video by ID"""
+    """Get a single video by ID, or delete if requester is the creator."""
     try:
         video = Video.objects.get(id=video_id)
-        # Check if user is owner to show bet markers
-        is_owner = request.user.is_authenticated and request.user.id == video.creator.id
-        # Check if preview mode is requested
-        is_preview = request.query_params.get('preview', 'false').lower() == 'true'
-        # Show bet markers if owner or in preview mode
-        show_bet_markers = is_owner or is_preview
-        serializer = VideoSerializer(video, context={'request': request, 'is_owner': show_bet_markers})
-        return Response(serializer.data, status=status.HTTP_200_OK)
     except Video.DoesNotExist:
         return Response({'error': 'Video not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'DELETE':
+        if not request.user.is_authenticated:
+            return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
+        if video.creator_id != request.user.id:
+            return Response({'error': 'You can only delete your own videos'}, status=status.HTTP_403_FORBIDDEN)
+        video.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    # GET
+    # Check if user is owner to show bet markers
+    is_owner = request.user.is_authenticated and request.user.id == video.creator.id
+    # Check if preview mode is requested
+    is_preview = request.query_params.get('preview', 'false').lower() == 'true'
+    # Show bet markers if owner or in preview mode
+    show_bet_markers = is_owner or is_preview
+    serializer = VideoSerializer(video, context={'request': request, 'is_owner': show_bet_markers})
+    return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 @extend_schema(
