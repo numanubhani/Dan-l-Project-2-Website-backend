@@ -1,3 +1,6 @@
+from decimal import Decimal, InvalidOperation
+
+from django.conf import settings
 from rest_framework import status, generics, permissions
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
@@ -350,6 +353,54 @@ def upload_video(request):
         video_serializer = VideoSerializer(video, context={'request': request, 'is_owner': True})
         return Response(video_serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@extend_schema(
+    request=OpenApiTypes.OBJECT,
+    responses={200: OpenApiTypes.OBJECT},
+    description='**QA only:** Add fake credits to the authenticated user’s balance. Disabled unless DEBUG or ENABLE_TEST_WALLET_API.',
+)
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def test_wallet_credit(request):
+    """
+    Add amount to request.user.balance for integration testing (real DB, real bet flow).
+
+    Body: { \"amount\": 100 }
+
+    Requires Token auth. Gated by settings.ENABLE_TEST_WALLET_API.
+    """
+    if not getattr(settings, 'ENABLE_TEST_WALLET_API', False):
+        return Response(
+            {
+                'error': 'Test wallet API is disabled. '
+                'Set DEBUG=True locally or ENABLE_TEST_WALLET_API=1 on the server.',
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    raw = request.data.get('amount')
+    if raw is None:
+        return Response({'error': 'amount is required'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        amount = Decimal(str(raw))
+        if amount <= 0:
+            raise InvalidOperation()
+        if amount > Decimal('100000'):
+            return Response({'error': 'amount too large (max 100000)'}, status=status.HTTP_400_BAD_REQUEST)
+    except (InvalidOperation, TypeError, ValueError):
+        return Response({'error': 'Invalid amount'}, status=status.HTTP_400_BAD_REQUEST)
+
+    user = request.user
+    user.balance += amount
+    user.save(update_fields=['balance'])
+    return Response(
+        {
+            'message': 'Test credits applied',
+            'balance': float(user.balance),
+        },
+        status=status.HTTP_200_OK,
+    )
 
 
 # ---------- Betting ----------

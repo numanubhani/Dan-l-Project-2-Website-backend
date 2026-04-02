@@ -39,5 +39,8 @@ urlpatterns = [
     
     # Shop endpoints
     path('shop/<int:user_id>/', views.get_user_shop_items, name='get_user_shop_items'),
+
+    # Test / QA wallet (gated by ENABLE_TEST_WALLET_API in settings)
+    path('wallet/test-credit/', views.test_wallet_credit, name='test_wallet_credit'),
 ]
 

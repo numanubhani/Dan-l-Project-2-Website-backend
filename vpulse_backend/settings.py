@@ -41,6 +41,11 @@ PYTHONANYWHERE_DOMAIN = f'{PYTHONANYWHERE_USER}.pythonanywhere.com'
 SECRET_KEY = _get_env('SECRET_KEY', 'django-insecure-vpulse-dev-key-change-in-production-2024')
 DEBUG = _get_env('DEBUG', True, lambda v: str(v).lower() in ('1', 'true', 'yes'))
 
+# When True, POST /api/wallet/test-credit/ adds balance for the authenticated user (for QA only).
+# Enabled automatically in DEBUG mode; on production/staging set env ENABLE_TEST_WALLET_API=true if needed.
+_ENABLE_TEST = str(_get_env('ENABLE_TEST_WALLET_API', 'false') or '').lower() in ('1', 'true', 'yes')
+ENABLE_TEST_WALLET_API = bool(DEBUG) or _ENABLE_TEST
+
 # Hosts: local + PythonAnywhere domain from above; extra hosts from env (comma-separated).
 _ALLOWED = _get_env('ALLOWED_HOSTS', PYTHONANYWHERE_DOMAIN)
 ALLOWED_HOSTS = ['127.0.0.1', 'localhost'] + [h.strip() for h in _ALLOWED.split(',') if h.strip()]
